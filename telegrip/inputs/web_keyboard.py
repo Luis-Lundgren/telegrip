@@ -300,15 +300,19 @@ class WebKeyboardHandler(BaseInputProvider):
                 # Backward
                 self.base_state["x_vel"] = -1.0
             elif key == 'arrowleft':
-                if self.base_state["shift_held"]:
-                    # Strafe left
+                # Check if strafe is supported (only in omnidirectional mode)
+                can_strafe = self.robot_interface.can_strafe() if self.robot_interface else False
+                if self.base_state["shift_held"] and can_strafe:
+                    # Strafe left (only if supported)
                     self.base_state["y_vel"] = 1.0
                 else:
                     # Rotate left (counter-clockwise)
                     self.base_state["theta_vel"] = 1.0
             elif key == 'arrowright':
-                if self.base_state["shift_held"]:
-                    # Strafe right
+                # Check if strafe is supported (only in omnidirectional mode)
+                can_strafe = self.robot_interface.can_strafe() if self.robot_interface else False
+                if self.base_state["shift_held"] and can_strafe:
+                    # Strafe right (only if supported)
                     self.base_state["y_vel"] = -1.0
                 else:
                     # Rotate right (clockwise)

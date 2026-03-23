@@ -68,6 +68,20 @@
           </div>
 
           <div class="settings-section">
+            <h3>🛞 Base (Wheels)</h3>
+            <div class="form-group">
+              <label for="baseMode">Drive Mode</label>
+              <select id="baseMode" name="baseMode">
+                <option value="differential">Differential (2 wheels) - forward/back, rotate only</option>
+                <option value="omnidirectional">Omnidirectional (3 wheels) - can also strafe</option>
+              </select>
+            </div>
+            <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+              Requires system restart to take effect
+            </p>
+          </div>
+
+          <div class="settings-section">
             <h3>🎮 Control Parameters</h3>
             <div class="form-row">
               <div class="form-group">
@@ -257,7 +271,7 @@
                   <span><kbd class="key">←</kbd> / <kbd class="key">→</kbd></span>
                   <span class="key-desc">Rotate Left / Right</span>
                 </div>
-                <div class="key-row">
+                <div class="key-row" id="strafeKeyRow">
                   <span><kbd class="key">⇧</kbd>+<kbd class="key">←</kbd>/<kbd class="key">→</kbd></span>
                   <span class="key-desc">Strafe Left / Right</span>
                 </div>

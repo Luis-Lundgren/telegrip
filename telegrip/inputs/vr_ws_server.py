@@ -14,7 +14,7 @@ from typing import Dict, Optional, Set
 from scipy.spatial.transform import Rotation as R
 
 from .base import BaseInputProvider, ControlGoal, ControlMode, BaseControlGoal
-from ..config import TelegripConfig, BASE_SPEED_LEVELS
+from ..config import TelegripConfig, BASE_SPEED_LEVELS, BASE_MODE
 from ..core.kinematics import compute_relative_position
 
 logger = logging.getLogger(__name__)
@@ -356,8 +356,14 @@ class VRWebSocketServer(BaseInputProvider):
     async def process_thumbsticks_for_base(self, left_data: Dict, right_data: Dict):
         """Process thumbstick inputs for base (wheel) control.
 
-        Left thumbstick: Forward/backward (Y) and strafe left/right (X)
-        Right thumbstick X: Rotation
+        Omnidirectional mode (3 wheels):
+            Left thumbstick Y: Forward/backward
+            Left thumbstick X: Strafe left/right
+            Right thumbstick X: Rotation
+
+        Differential mode (2 wheels):
+            Left thumbstick Y: Forward/backward
+            Left thumbstick X: Rotation (cannot strafe)
 
         Thumbstick magnitude controls speed (0 to max speed level).
         """
@@ -383,13 +389,21 @@ class VRWebSocketServer(BaseInputProvider):
         max_linear = speed_level["linear"]
         max_angular = speed_level["angular"]
 
-        # Map thumbstick values to velocities
+        # Map thumbstick values to velocities based on mode
         # Left Y -> forward/backward (negate because thumbstick up is negative Y)
-        # Left X -> strafe (positive X = right, so negate for left-positive convention)
-        # Right X -> rotation (positive X = clockwise, so negate for CCW-positive convention)
-        x_vel = -left_y * max_linear      # Forward/backward
-        y_vel = -left_x * max_linear     # Strafe (left positive)
-        theta_vel = -right_x * max_angular  # Rotation (CCW positive)
+        x_vel = -left_y * max_linear  # Forward/backward
+
+        if BASE_MODE == "omnidirectional":
+            # Omnidirectional: left X = strafe, right X = rotation
+            y_vel = -left_x * max_linear      # Strafe (left positive)
+            theta_vel = -right_x * max_angular  # Rotation (CCW positive)
+        else:
+            # Differential: left X = rotation (cannot strafe), right X also rotation
+            y_vel = 0.0  # Cannot strafe
+            # Use left X for rotation, but also allow right X as alternative
+            theta_vel = -left_x * max_angular  # Left stick X = rotation
+            if left_x == 0 and right_x != 0:
+                theta_vel = -right_x * max_angular  # Fallback to right stick if left not used
 
         # Send base control goal
         base_goal = BaseControlGoal(

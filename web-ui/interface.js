@@ -35,12 +35,15 @@ function populateSettingsForm(config) {
   document.getElementById('leftArmPort').value = config.robot?.left_arm?.port || '';
   document.getElementById('rightArmName').value = config.robot?.right_arm?.name || '';
   document.getElementById('rightArmPort').value = config.robot?.right_arm?.port || '';
-  
+
   // Network settings
   document.getElementById('httpsPort').value = config.network?.https_port || '';
   document.getElementById('websocketPort').value = config.network?.websocket_port || '';
   document.getElementById('hostIp').value = config.network?.host_ip || '';
-  
+
+  // Base (wheels) settings
+  document.getElementById('baseMode').value = config.base?.mode || 'differential';
+
   // Control parameters
   document.getElementById('vrScale').value = config.robot?.vr_to_robot_scale || '';
   document.getElementById('sendInterval').value = (config.robot?.send_interval * 1000) || ''; // Convert to ms
@@ -90,7 +93,7 @@ function restartSystem() {
 function saveConfiguration() {
   const form = document.getElementById('settingsForm');
   const formData = new FormData(form);
-  
+
   // Build config object
   const updatedConfig = {
     robot: {
@@ -106,6 +109,9 @@ function saveConfiguration() {
       },
       vr_to_robot_scale: parseFloat(formData.get('vrScale')),
       send_interval: parseFloat(formData.get('sendInterval')) / 1000 // Convert from ms
+    },
+    base: {
+      mode: formData.get('baseMode')
     },
     network: {
       https_port: parseInt(formData.get('httpsPort')),
@@ -158,25 +164,33 @@ function updateStatus() {
       const leftIndicator = document.getElementById('leftArmStatus');
       const rightIndicator = document.getElementById('rightArmStatus');
       const vrIndicator = document.getElementById('vrStatus');
-      
+
       leftIndicator.className = 'status-indicator' + (data.left_arm_connected ? ' connected' : '');
       rightIndicator.className = 'status-indicator' + (data.right_arm_connected ? ' connected' : '');
       vrIndicator.className = 'status-indicator' + (data.vrConnected ? ' connected' : '');
-      
+
       // Update keyboard control status
       isKeyboardEnabled = data.keyboardEnabled;
       const keyboardHelp = document.querySelector('.keyboard-help');
-      
+
       if (isKeyboardEnabled) {
         if (keyboardHelp) keyboardHelp.classList.add('active');
       } else {
         if (keyboardHelp) keyboardHelp.classList.remove('active');
       }
-      
+
       // Update robot engagement status
       if (data.robotEngaged !== undefined) {
         isRobotEngaged = data.robotEngaged;
         updateEngagementUI();
+      }
+
+      // Update strafe key visibility based on base mode
+      if (data.base_mode !== undefined) {
+        const strafeKeyRow = document.getElementById('strafeKeyRow');
+        if (strafeKeyRow) {
+          strafeKeyRow.style.display = (data.base_mode === 'omnidirectional') ? '' : 'none';
+        }
       }
     })
     .catch(error => {

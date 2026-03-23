@@ -40,6 +40,22 @@ DEFAULT_CONFIG = {
         "vr_to_robot_scale": 1.0,
         "send_interval": 0.05,
     },
+    "base": {
+        "mode": "differential",  # "differential" (2-wheel) or "omnidirectional" (3-wheel)
+        "differential": {
+            "left_motor_id": 10,
+            "right_motor_id": 9,
+            "wheel_radius": 0.0625,  # 6.25cm (12.5cm diameter)
+            "wheel_base_width": 0.52,  # 52cm between wheels
+        },
+        "omnidirectional": {
+            "left_motor_id": 7,
+            "back_motor_id": 8,
+            "right_motor_id": 9,
+            "wheel_radius": 0.05,  # 5cm
+            "wheel_base_radius": 0.125,  # 12.5cm from center to each wheel
+        },
+    },
     "control": {
         "keyboard": {
             "enabled": True,
@@ -146,12 +162,31 @@ GRIPPER_OPEN_ANGLE = _config_data["gripper"]["open_angle"]
 GRIPPER_CLOSED_ANGLE = _config_data["gripper"]["closed_angle"]
 
 # --- Base (Wheel) Configuration ---
-# Wheel motors on right arm bus (motors 7, 8, 9)
-WHEEL_MOTOR_NAMES = ["base_left_wheel", "base_back_wheel", "base_right_wheel"]
+# Base mode: "differential" (2-wheel) or "omnidirectional" (3-wheel)
+BASE_MODE = _config_data.get("base", {}).get("mode", "differential")
 
-# Wheel physical parameters
-WHEEL_RADIUS = 0.05  # meters (5cm)
-WHEEL_BASE_RADIUS = 0.125  # distance from robot center to each wheel (meters)
+# Get mode-specific configuration
+_base_config = _config_data.get("base", {})
+_diff_config = _base_config.get("differential", {})
+_omni_config = _base_config.get("omnidirectional", {})
+
+# Differential drive (2-wheel) configuration
+DIFF_LEFT_MOTOR_ID = _diff_config.get("left_motor_id", 10)
+DIFF_RIGHT_MOTOR_ID = _diff_config.get("right_motor_id", 9)
+DIFF_WHEEL_RADIUS = _diff_config.get("wheel_radius", 0.0625)  # 6.25cm
+DIFF_WHEEL_BASE_WIDTH = _diff_config.get("wheel_base_width", 0.52)  # 52cm
+
+# Omnidirectional drive (3-wheel) configuration
+OMNI_LEFT_MOTOR_ID = _omni_config.get("left_motor_id", 7)
+OMNI_BACK_MOTOR_ID = _omni_config.get("back_motor_id", 8)
+OMNI_RIGHT_MOTOR_ID = _omni_config.get("right_motor_id", 9)
+OMNI_WHEEL_RADIUS = _omni_config.get("wheel_radius", 0.05)  # 5cm
+OMNI_WHEEL_BASE_RADIUS = _omni_config.get("wheel_base_radius", 0.125)  # 12.5cm
+
+# Legacy compatibility: use omni values as defaults for existing code
+WHEEL_MOTOR_NAMES = ["base_left_wheel", "base_back_wheel", "base_right_wheel"]
+WHEEL_RADIUS = OMNI_WHEEL_RADIUS
+WHEEL_BASE_RADIUS = OMNI_WHEEL_BASE_RADIUS
 
 # Base speed settings
 BASE_SPEED_LEVELS = [
@@ -228,6 +263,9 @@ class TelegripConfig:
     robot_type: str = ROBOT_TYPE  # "so100" for 1-2 arms, "xlerobot" for full xlerobot with wheels
     vr_to_robot_scale: float = VR_TO_ROBOT_SCALE
     send_interval: float = SEND_INTERVAL
+
+    # Base (wheel) settings
+    base_mode: str = BASE_MODE  # "differential" (2-wheel) or "omnidirectional" (3-wheel)
 
     # Device ports
     follower_ports: Dict[str, str] = None

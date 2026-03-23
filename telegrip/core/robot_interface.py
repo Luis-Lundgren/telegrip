@@ -24,10 +24,12 @@ from ..config import (
     TelegripConfig, NUM_JOINTS, JOINT_NAMES,
     GRIPPER_OPEN_ANGLE, GRIPPER_CLOSED_ANGLE,
     WRIST_FLEX_INDEX, URDF_TO_INTERNAL_NAME_MAP,
-    WHEEL_MOTOR_NAMES, BASE_SPEED_LEVELS, DEFAULT_BASE_SPEED_INDEX
+    WHEEL_MOTOR_NAMES, BASE_SPEED_LEVELS, DEFAULT_BASE_SPEED_INDEX,
+    BASE_MODE,
 )
 from .kinematics import ForwardKinematics, IKSolver
-from .omni_kinematics import body_to_wheel_velocities
+from .omni_kinematics import body_to_wheel_velocities as omni_body_to_wheel
+from .differential_kinematics import body_to_wheel_velocities as diff_body_to_wheel
 
 # Joint name mapping: internal (telegrip) -> XLerobot format
 XLEROBOT_LEFT_ARM_JOINT_MAP = {
@@ -134,6 +136,7 @@ class RobotInterface:
         self.base_speed_index = DEFAULT_BASE_SPEED_INDEX
         self.current_base_velocities = {"x": 0.0, "y": 0.0, "theta": 0.0}
         self.wheel_commands = {name: 0 for name in WHEEL_MOTOR_NAMES}
+        self.base_mode = BASE_MODE  # "differential" or "omnidirectional"
     
     def setup_robot_configs(self) -> Tuple[SO100FollowerConfig, SO100FollowerConfig]:
         """Create robot configurations for both arms."""
@@ -598,19 +601,33 @@ class RobotInterface:
 
         Args:
             x_vel: Forward/backward velocity (m/s), positive = forward
-            y_vel: Strafe left/right velocity (m/s), positive = left
+            y_vel: Strafe left/right velocity (m/s), positive = left (ignored in differential mode)
             theta_vel: Rotational velocity (deg/s), positive = counter-clockwise
 
         For XLerobot: velocities are sent directly as x.vel, y.vel, theta.vel
         For SO100: not supported (no wheels)
+
+        Note: In differential mode, y_vel is ignored (cannot strafe with 2 wheels).
         """
+        # In differential mode, ignore strafe velocity
+        if self.base_mode == "differential":
+            y_vel = 0.0
+
         self.current_base_velocities = {"x": x_vel, "y": y_vel, "theta": theta_vel}
-        # For SO100 compatibility (not used but kept for interface consistency)
-        self.wheel_commands = body_to_wheel_velocities(x_vel, y_vel, theta_vel)
+
+        # Compute wheel commands using appropriate kinematics
+        if self.base_mode == "differential":
+            self.wheel_commands = diff_body_to_wheel(x_vel, y_vel, theta_vel)
+        else:
+            self.wheel_commands = omni_body_to_wheel(x_vel, y_vel, theta_vel)
 
     def stop_base(self):
         """Stop all wheel motors (set velocities to zero)."""
         self.set_base_velocities(0.0, 0.0, 0.0)
+
+    def can_strafe(self) -> bool:
+        """Check if the base supports strafing (omnidirectional mode only)."""
+        return self.base_mode == "omnidirectional"
 
     def get_current_speed_level(self) -> dict:
         """Get current speed level settings."""

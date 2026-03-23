@@ -179,11 +179,17 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
                 if system.vr_server and system.vr_server.is_running:
                     vr_connected = len(system.vr_server.clients) > 0
                 
+                # Get base mode from robot interface
+                base_mode = "differential"
+                if system.control_loop and system.control_loop.robot_interface:
+                    base_mode = system.control_loop.robot_interface.base_mode
+
                 status = {
                     **control_status,
                     "keyboardEnabled": keyboard_enabled,
                     "robotEngaged": robot_engaged,
-                    "vrConnected": vr_connected
+                    "vrConnected": vr_connected,
+                    "base_mode": base_mode
                 }
                 
                 # Send JSON response

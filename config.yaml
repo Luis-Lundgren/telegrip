@@ -35,6 +35,19 @@ robot:
     port: /dev/ttySO100red
   send_interval: 0.05
   vr_to_robot_scale: 1
+base:
+  mode: differential  # "differential" (2-wheel) or "omnidirectional" (3-wheel)
+  differential:
+    left_motor_id: 10
+    right_motor_id: 9
+    wheel_radius: 0.0625  # 6.25cm (12.5cm diameter)
+    wheel_base_width: 0.52  # 52cm between wheels
+  omnidirectional:
+    left_motor_id: 7
+    back_motor_id: 8
+    right_motor_id: 9
+    wheel_radius: 0.05  # 5cm
+    wheel_base_radius: 0.125  # 12.5cm from center to each wheel
 ssl:
   certfile: cert.pem
   keyfile: key.pem

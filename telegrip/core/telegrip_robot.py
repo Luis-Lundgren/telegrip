@@ -3,7 +3,7 @@ TelegripRobot - XLerobot variant without head motors.
 
 This subclass of XLerobot is for robots that have:
 - Left arm: motors 1-6 (no head motors 7, 8)
-- Right arm: motors 1-6 + wheels 7, 8, 9
+- Right arm: motors 1-6 + wheels (configurable: 2-wheel differential or 3-wheel omni)
 
 It inherits all the useful methods from XLerobot (send_action, connect, disconnect,
 wheel kinematics, etc.) but configures the motor buses differently.
@@ -22,6 +22,12 @@ from lerobot.motors.feetech import FeetechMotorsBus, OperatingMode
 from lerobot.robots.robot import Robot
 from lerobot.robots.xlerobot.config_xlerobot import XLerobotConfig
 from lerobot.robots.xlerobot.xlerobot import XLerobot
+
+from ..config import (
+    BASE_MODE,
+    DIFF_LEFT_MOTOR_ID, DIFF_RIGHT_MOTOR_ID,
+    OMNI_LEFT_MOTOR_ID, OMNI_BACK_MOTOR_ID, OMNI_RIGHT_MOTOR_ID,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +89,27 @@ class TelegripRobot(XLerobot):
             calibration=calibration1,
         )
 
+        # Store base mode for later use
+        self.base_mode = BASE_MODE
+        logger.info(f"TelegripRobot using base mode: {self.base_mode}")
+
+        # Build wheel motor configuration based on base mode
+        if self.base_mode == "differential":
+            # 2-wheel differential drive
+            wheel_motors = {
+                "base_left_wheel": Motor(DIFF_LEFT_MOTOR_ID, "sts3215", MotorNormMode.RANGE_M100_100),
+                "base_right_wheel": Motor(DIFF_RIGHT_MOTOR_ID, "sts3215", MotorNormMode.RANGE_M100_100),
+            }
+            wheel_calibration_keys = ["base_left_wheel", "base_right_wheel"]
+        else:
+            # 3-wheel omnidirectional drive
+            wheel_motors = {
+                "base_left_wheel": Motor(OMNI_LEFT_MOTOR_ID, "sts3215", MotorNormMode.RANGE_M100_100),
+                "base_back_wheel": Motor(OMNI_BACK_MOTOR_ID, "sts3215", MotorNormMode.RANGE_M100_100),
+                "base_right_wheel": Motor(OMNI_RIGHT_MOTOR_ID, "sts3215", MotorNormMode.RANGE_M100_100),
+            }
+            wheel_calibration_keys = ["base_left_wheel", "base_back_wheel", "base_right_wheel"]
+
         # Calibration for bus2 (right arm + wheels)
         if self.calibration.get("right_arm_shoulder_pan") is not None:
             calibration2 = {
@@ -92,28 +119,28 @@ class TelegripRobot(XLerobot):
                 "right_arm_wrist_flex": self.calibration.get("right_arm_wrist_flex"),
                 "right_arm_wrist_roll": self.calibration.get("right_arm_wrist_roll"),
                 "right_arm_gripper": self.calibration.get("right_arm_gripper"),
-                "base_left_wheel": self.calibration.get("base_left_wheel"),
-                "base_back_wheel": self.calibration.get("base_back_wheel"),
-                "base_right_wheel": self.calibration.get("base_right_wheel"),
             }
+            # Add wheel calibrations
+            for key in wheel_calibration_keys:
+                calibration2[key] = self.calibration.get(key)
         else:
             calibration2 = self.calibration
+
+        # Build bus2 motors dict (right arm + wheels)
+        bus2_motors = {
+            "right_arm_shoulder_pan": Motor(1, "sts3215", norm_mode_body),
+            "right_arm_shoulder_lift": Motor(2, "sts3215", norm_mode_body),
+            "right_arm_elbow_flex": Motor(3, "sts3215", norm_mode_body),
+            "right_arm_wrist_flex": Motor(4, "sts3215", norm_mode_body),
+            "right_arm_wrist_roll": Motor(5, "sts3215", norm_mode_body),
+            "right_arm_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
+        }
+        bus2_motors.update(wheel_motors)
 
         # Bus 2: Right arm + wheels
         self.bus2 = FeetechMotorsBus(
             port=self.config.port2,
-            motors={
-                "right_arm_shoulder_pan": Motor(1, "sts3215", norm_mode_body),
-                "right_arm_shoulder_lift": Motor(2, "sts3215", norm_mode_body),
-                "right_arm_elbow_flex": Motor(3, "sts3215", norm_mode_body),
-                "right_arm_wrist_flex": Motor(4, "sts3215", norm_mode_body),
-                "right_arm_wrist_roll": Motor(5, "sts3215", norm_mode_body),
-                "right_arm_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
-                # Wheels
-                "base_left_wheel": Motor(7, "sts3215", MotorNormMode.RANGE_M100_100),
-                "base_back_wheel": Motor(8, "sts3215", MotorNormMode.RANGE_M100_100),
-                "base_right_wheel": Motor(9, "sts3215", MotorNormMode.RANGE_M100_100),
-            },
+            motors=bus2_motors,
             calibration=calibration2,
         )
 
@@ -187,11 +214,20 @@ class TelegripRobot(XLerobot):
         # NO head motors to read
         base_wheel_vel = self.bus2.sync_read("Present_Velocity", self.base_motors)
 
-        base_vel = self._wheel_raw_to_body(
-            base_wheel_vel["base_left_wheel"],
-            base_wheel_vel["base_back_wheel"],
-            base_wheel_vel["base_right_wheel"],
-        )
+        # Convert wheel velocities to body frame based on mode
+        if self.base_mode == "differential":
+            from .differential_kinematics import wheel_velocities_to_body as diff_wheel_to_body
+            x_vel, y_vel, theta_vel = diff_wheel_to_body(
+                base_wheel_vel["base_left_wheel"],
+                base_wheel_vel["base_right_wheel"],
+            )
+            base_vel = {"x.vel": x_vel, "y.vel": y_vel, "theta.vel": theta_vel}
+        else:
+            base_vel = self._wheel_raw_to_body(
+                base_wheel_vel["base_left_wheel"],
+                base_wheel_vel["base_back_wheel"],
+                base_wheel_vel["base_right_wheel"],
+            )
 
         left_arm_state = {f"{k}.pos": v for k, v in left_arm_pos.items()}
         right_arm_state = {f"{k}.pos": v for k, v in right_arm_pos.items()}
@@ -209,6 +245,59 @@ class TelegripRobot(XLerobot):
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
 
         return obs_dict
+
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        """
+        Override send_action to handle differential vs omnidirectional base modes.
+
+        In differential mode, we use 2-wheel kinematics.
+        In omnidirectional mode, we use the parent's 3-wheel kinematics.
+        """
+        from lerobot.utils.errors import DeviceNotConnectedError
+
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected.")
+
+        # Extract position commands for arms
+        left_arm_pos = {k: v for k, v in action.items() if k.startswith("left_arm_") and k.endswith(".pos")}
+        right_arm_pos = {k: v for k, v in action.items() if k.startswith("right_arm_") and k.endswith(".pos")}
+        base_goal_vel = {k: v for k, v in action.items() if k.endswith(".vel")}
+
+        # Convert body velocities to wheel commands based on mode
+        if self.base_mode == "differential":
+            from .differential_kinematics import body_to_wheel_velocities as diff_body_to_wheel
+            x_in = base_goal_vel.get("x.vel", 0.0)
+            theta_in = base_goal_vel.get("theta.vel", 0.0)
+            if x_in != 0 or theta_in != 0:
+                logger.debug(f"Differential input: x={x_in}, theta={theta_in}")
+            base_wheel_goal_vel = diff_body_to_wheel(
+                x_in,
+                base_goal_vel.get("y.vel", 0.0),  # Will be ignored
+                theta_in,
+            )
+            if x_in != 0 or theta_in != 0:
+                logger.debug(f"Differential output: {base_wheel_goal_vel}")
+        else:
+            # Use parent's 3-wheel kinematics
+            base_wheel_goal_vel = self._body_to_wheel_raw(
+                base_goal_vel.get("x.vel", 0.0),
+                base_goal_vel.get("y.vel", 0.0),
+                base_goal_vel.get("theta.vel", 0.0),
+            )
+
+        # Strip the .pos suffix for sync_write
+        left_arm_pos_raw = {k.replace(".pos", ""): v for k, v in left_arm_pos.items()}
+        right_arm_pos_raw = {k.replace(".pos", ""): v for k, v in right_arm_pos.items()}
+
+        # Write to motors
+        if left_arm_pos_raw:
+            self.bus1.sync_write("Goal_Position", left_arm_pos_raw)
+        if right_arm_pos_raw:
+            self.bus2.sync_write("Goal_Position", right_arm_pos_raw)
+        if base_wheel_goal_vel:
+            self.bus2.sync_write("Goal_Velocity", base_wheel_goal_vel)
+
+        return action
 
     @property
     def _state_ft(self) -> dict[str, type]:
