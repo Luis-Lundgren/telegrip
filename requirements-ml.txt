@@ -1,0 +1,3 @@
+# Optional ML and hardware drivers for LeRobot SO-100 control
+torch
+lerobot[feetech]
