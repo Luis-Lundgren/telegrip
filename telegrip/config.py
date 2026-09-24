@@ -143,6 +143,20 @@ URDF_PATH = _config_data["paths"]["urdf_path"]
 GRIPPER_OPEN_ANGLE = _config_data["gripper"]["open_angle"]
 GRIPPER_CLOSED_ANGLE = _config_data["gripper"]["closed_angle"]
 
+# URDF jaw joint (joint "6") limits from so100.urdf: -0.2 .. 2.0 rad.
+# In the URDF/GLB frame 0 deg = jaw closed and positive angles open it,
+# which is the reverse of the hardware command frame (0=open, 45=closed).
+GRIPPER_URDF_MIN_DEG = -11.5
+GRIPPER_URDF_MAX_DEG = 114.6
+
+
+def hardware_to_urdf_gripper_deg(hardware_deg: float) -> float:
+    """Map hardware gripper degrees (0=open, closed_angle=closed) to URDF/GLB
+    jaw joint degrees (0=closed, positive=open) used by PyBullet and the
+    web/VR digital twins."""
+    urdf_deg = GRIPPER_CLOSED_ANGLE - hardware_deg
+    return max(GRIPPER_URDF_MIN_DEG, min(GRIPPER_URDF_MAX_DEG, urdf_deg))
+
 # IK Configuration
 USE_REFERENCE_POSES = _config_data["ik"]["use_reference_poses"]
 REFERENCE_POSES_FILE = _config_data["ik"]["reference_poses_file"]
@@ -211,6 +225,8 @@ class TelegripConfig:
     
     # Device ports
     follower_ports: Dict[str, str] = None
+    left_arm_enabled: bool = True
+    right_arm_enabled: bool = True
     
     # Control flags
     enable_pybullet: bool = True
@@ -254,6 +270,12 @@ class TelegripConfig:
             self.follower_ports["left"] = "/dev/ttyACM0"
         if self.follower_ports["right"] is None:
             self.follower_ports["right"] = "/dev/ttyACM1"
+            
+        robot_cfg = _config_data.get("robot", {})
+        if "left_arm" in robot_cfg:
+            self.left_arm_enabled = robot_cfg["left_arm"].get("enabled", True)
+        if "right_arm" in robot_cfg:
+            self.right_arm_enabled = robot_cfg["right_arm"].get("enabled", True)
     
     @property
     def ssl_files_exist(self) -> bool:

@@ -4,16 +4,16 @@ Provides a clean wrapper around robot devices with safety checks and convenience
 """
 
 import numpy as np
-import torch
 import time
 import logging
 import os
 import sys
 import contextlib
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, TYPE_CHECKING
 
-# New lerobot structure imports
-from lerobot.robots.so_follower.so_follower import SOFollower, SOFollowerRobotConfig
+if TYPE_CHECKING:
+    from lerobot.robots.so_follower.config_so_follower import SO100FollowerConfig
+    from lerobot.robots.so_follower.so_follower import SO100Follower
 
 from ..config import (
     TelegripConfig, NUM_JOINTS, JOINT_NAMES,
@@ -61,6 +61,10 @@ class RobotInterface:
     """High-level interface for SO100 robot control with safety features."""
     
     def __init__(self, config: TelegripConfig):
+        # Initial positions for safe shutdown and startup
+        self.initial_left_arm = np.array([0, -100, 100, 60, 0, 0])
+        self.initial_right_arm = np.array([0, -100, 100, 60, 0, 0])
+
         self.config = config
         self.left_robot = None
         self.right_robot = None
@@ -72,8 +76,8 @@ class RobotInterface:
         self.right_arm_connected = False
         
         # Joint state
-        self.left_arm_angles = np.zeros(NUM_JOINTS)
-        self.right_arm_angles = np.zeros(NUM_JOINTS)
+        self.left_arm_angles = self.initial_left_arm.copy()
+        self.right_arm_angles = self.initial_right_arm.copy()
         
         # Joint limits (will be set by visualizer)
         self.joint_limits_min_deg = np.full(NUM_JOINTS, -180.0)
@@ -92,29 +96,28 @@ class RobotInterface:
         self.general_errors = 0
         self.max_arm_errors = 3  # Allow fewer errors per arm before marking as disconnected
         self.max_general_errors = 8  # Allow more general errors before full disconnection
-        
-        # Initial positions for safe shutdown - restored original values
-        self.initial_left_arm = np.array([0, -100, 100, 60, 0, 0])
-        self.initial_right_arm = np.array([0, -100, 100, 60, 0, 0])
     
-    def setup_robot_configs(self) -> Tuple[SOFollowerRobotConfig, SOFollowerRobotConfig]:
+    def setup_robot_configs(self) -> Tuple["SO100FollowerConfig", "SO100FollowerConfig"]:
         """Create robot configurations for both arms."""
+        from lerobot.robots.so_follower.config_so_follower import SO100FollowerConfig
         logger.info(f"Setting up robot configs with ports: {self.config.follower_ports}")
-
-        left_config = SOFollowerRobotConfig(
+        
+        left_config = SO100FollowerConfig(
             port=self.config.follower_ports["left"],
-            id="left_follower",
             use_degrees=True,  # Use degrees for easier debugging
             disable_torque_on_disconnect=True
         )
-
-        right_config = SOFollowerRobotConfig(
+        # Set the robot name for calibration file lookup
+        left_config.id = "left_follower"
+        
+        right_config = SO100FollowerConfig(
             port=self.config.follower_ports["right"],
-            id="right_follower",
             use_degrees=True,  # Use degrees for easier debugging
             disable_torque_on_disconnect=True
         )
-
+        # Set the robot name for calibration file lookup
+        right_config.id = "right_follower"
+        
         return left_config, right_config
     
     def connect(self) -> bool:
@@ -134,38 +137,47 @@ class RobotInterface:
                           self.config.log_level == "error")
         
         try:
+            from lerobot.robots.so_follower.so_follower import SO100Follower
             left_config, right_config = self.setup_robot_configs()
             if not should_suppress:
                 logger.info("Connecting to robot...")
             
             # Connect left arm
-            try:
-                if should_suppress:
-                    with suppress_stdout_stderr():
-                        self.left_robot = SOFollower(left_config)
+            if self.config.left_arm_enabled:
+                try:
+                    if should_suppress:
+                        with suppress_stdout_stderr():
+                            self.left_robot = SO100Follower(left_config)
+                            self.left_robot.connect()
+                    else:
+                        self.left_robot = SO100Follower(left_config)
                         self.left_robot.connect()
-                else:
-                    self.left_robot = SOFollower(left_config)
-                    self.left_robot.connect()
-                self.left_arm_connected = True
-                logger.info("✅ Left arm connected successfully")
-            except Exception as e:
-                logger.error(f"❌ Left arm connection failed: {e}")
+                    self.left_arm_connected = True
+                    logger.info("✅ Left arm connected successfully")
+                except Exception as e:
+                    logger.error(f"❌ Left arm connection failed: {e}")
+                    self.left_arm_connected = False
+            else:
+                logger.info("Skipping Left arm connection (disabled in config)")
                 self.left_arm_connected = False
             
             # Connect right arm  
-            try:
-                if should_suppress:
-                    with suppress_stdout_stderr():
-                        self.right_robot = SOFollower(right_config)
+            if self.config.right_arm_enabled:
+                try:
+                    if should_suppress:
+                        with suppress_stdout_stderr():
+                            self.right_robot = SO100Follower(right_config)
+                            self.right_robot.connect()
+                    else:
+                        self.right_robot = SO100Follower(right_config)
                         self.right_robot.connect()
-                else:
-                    self.right_robot = SOFollower(right_config)
-                    self.right_robot.connect()
-                self.right_arm_connected = True
-                logger.info("✅ Right arm connected successfully")
-            except Exception as e:
-                logger.error(f"❌ Right arm connection failed: {e}")
+                    self.right_arm_connected = True
+                    logger.info("✅ Right arm connected successfully")
+                except Exception as e:
+                    logger.error(f"❌ Right arm connection failed: {e}")
+                    self.right_arm_connected = False
+            else:
+                logger.info("Skipping Right arm connection (disabled in config)")
                 self.right_arm_connected = False
                 
             # Mark as connected if at least one arm is connected
@@ -370,7 +382,7 @@ class RobotInterface:
             success = True
             
             # Send left arm command
-            if self.left_robot and self.left_arm_connected:
+            if self.left_robot and self.left_arm_connected and self.config.left_arm_enabled:
                 try:
                     action_dict = {
                         "shoulder_pan.pos": float(self.left_arm_angles[0]),
@@ -390,7 +402,7 @@ class RobotInterface:
                     success = False
             
             # Send right arm command
-            if self.right_robot and self.right_arm_connected:
+            if self.right_robot and self.right_arm_connected and self.config.right_arm_enabled:
                 try:
                     action_dict = {
                         "shoulder_pan.pos": float(self.right_arm_angles[0]),
@@ -556,6 +568,14 @@ class RobotInterface:
     
     def get_arm_connection_status(self, arm: str) -> bool:
         """Get connection status for specific arm based on device file existence."""
+        # In mock mode (no robot), always return True for enabled arms
+        if not self.config.enable_robot:
+            if arm == "left":
+                return self.config.left_arm_enabled
+            elif arm == "right":
+                return self.config.right_arm_enabled
+            return False
+
         # Only check device file existence - ignore overall robot connection status
         if arm == "left":
             device_path = self.config.follower_ports["left"]

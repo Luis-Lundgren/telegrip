@@ -74,6 +74,14 @@ class VRWebSocketServer(BaseInputProvider):
         self.left_arm_origin_position = None
         self.right_arm_origin_position = None
 
+        # Callbacks for received VR frames
+        self.frame_callbacks: List = []
+
+    def add_frame_callback(self, callback):
+        """Register a callback for raw VR controller messages."""
+        if callback not in self.frame_callbacks:
+            self.frame_callbacks.append(callback)
+
     def _get_local_ip(self) -> str:
         """Get the local IP address of this machine."""
         import socket
@@ -210,6 +218,12 @@ class VRWebSocketServer(BaseInputProvider):
     
     async def process_controller_data(self, data: Dict):
         """Process incoming VR controller data."""
+        # Notify registered frame listeners
+        for cb in self.frame_callbacks:
+            try:
+                cb(data)
+            except Exception as e:
+                logger.error(f"Error in VR frame callback: {e}")
         
         # Handle new dual controller format
         if 'leftController' in data and 'rightController' in data:
@@ -261,16 +275,15 @@ class VRWebSocketServer(BaseInputProvider):
         if trigger_active != controller.trigger_active:
             controller.trigger_active = trigger_active
             
-            # Send gripper control goal - do not specify mode to avoid interfering with position control
-            # Reverse behavior: gripper open by default, closes when trigger pressed
+            # Send gripper control goal: trigger pressed -> closed gripper
             gripper_goal = ControlGoal(
                 arm=hand,
-                gripper_closed=not trigger_active,  # Inverted: closed when trigger NOT active
+                gripper_closed=trigger_active,
                 metadata={"source": "vr_trigger"}
             )
             await self.send_goal(gripper_goal)
             
-            logger.info(f"🤏 {hand.upper()} gripper {'OPENED' if trigger_active else 'CLOSED'}")
+            logger.info(f"🤏 {hand.upper()} gripper {'CLOSED' if trigger_active else 'OPENED'}")
         
         # Handle grip button for arm movement control
         if grip_active:
@@ -376,15 +389,15 @@ class VRWebSocketServer(BaseInputProvider):
         if controller.trigger_active:
             controller.trigger_active = False
             
-            # Send gripper closed goal - reversed behavior: gripper closes when trigger released
+            # Send gripper open goal: releasing trigger opens gripper
             goal = ControlGoal(
                 arm=hand,
-                gripper_closed=True,  # Close gripper when trigger released
+                gripper_closed=False,
                 metadata={"source": "vr_trigger_release"}
             )
             await self.send_goal(goal)
             
-            logger.info(f"🤏 {hand.upper()} gripper CLOSED (trigger released)")
+            logger.info(f"🤏 {hand.upper()} gripper OPENED (trigger released)")
     
     def euler_to_quaternion(self, euler_deg: Dict[str, float]) -> np.ndarray:
         """Convert Euler angles in degrees to quaternion [x, y, z, w]."""
