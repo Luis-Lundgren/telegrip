@@ -39,8 +39,10 @@ dev = [
 telegrip = "telegrip.main:main_cli"
 
 [project.urls]
-Homepage = "https://github.com/your-username/vr_so100_teleoperation"
-Repository = "https://github.com/your-username/vr_so100_teleoperation"
+Homepage = "https://github.com/Luis-Lundgren/telegrip"
+Repository = "https://github.com/Luis-Lundgren/telegrip"
+Upstream = "https://github.com/DipFlip/telegrip"
+Issues = "https://github.com/Luis-Lundgren/telegrip/issues"
 
 [tool.setuptools]
 packages = ["telegrip"] 
